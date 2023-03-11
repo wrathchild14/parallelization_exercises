@@ -5,7 +5,7 @@
 #SBATCH --reservation=fri
 
 # divide the video in parts
-srun --ntasks=1 ffmpeg -y -i bbb.mp4 -codec copy -f segment -segment_time 130 -segment_list parts.txt part-%d.mp4
+srun --ntasks=1 ffmpeg -y -i bbb.mp4 -codec copy -f segment -segment_time 80 -segment_list parts.txt part-%d.mp4
 
 # change output_parts.txt in correct format: file 'asdasd.mp4'
 if [ ! -f output_parts.txt ]; then

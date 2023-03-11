@@ -2,7 +2,7 @@
 #SBATCH --job-name=scale
 #SBATCH --time=00:20:00
 #SBATCH --output=ffmpeg3-%a.txt
-#SBATCH --array=0-4
+#SBATCH --array=0-7
 #SBATCH --reservation=fri
 
 # scale down to half of the resolution

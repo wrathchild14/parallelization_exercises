@@ -25,7 +25,7 @@ Elapsed time for 16 threads: 0.927 - Speedup: 9.014
 Elapsed time for 32 threads: 0.562 - Speedup: 14.865
 */
 
-// Testing without "#pragma omp parallel for" on line 44
+// Testing without "#pragma omp parallel for" on line 54
 /* 
 Elapsed time for 1 threads: 8.382 (SERIAL)
 Elapsed time for 2 threads: 7.094  - Speedup: 1.181

@@ -24,12 +24,23 @@
  * Time on GPU with 1024 block size and grid_size.x 8, grid_size.y 4048: 35.507 milliseconds
  * Best of these times were the ones with [64, 128, 256] block sizes with a speedup around 4.6
  * 
+ * 
+ * on nsc:
+ * Time on CPU: 294.404 milliseconds 
+ * Time on GPU with 32 block size and grid_size.x 253, grid_size.y 4048: 29.899 milliseconds 
+ * Time on GPU with 64 block size and grid_size.x 127, grid_size.y 4048: 29.770 milliseconds 
+ * Time on GPU with 128 block size and grid_size.x 64, grid_size.y 4048: 30.404 milliseconds 
+ * Time on GPU with 256 block size and grid_size.x 32, grid_size.y 4048: 29.795 milliseconds 
+ * Time on GPU with 512 block size and grid_size.x 16, grid_size.y 4048: 29.816 milliseconds 
+ * Time on GPU with 1024 block size and grid_size.x 8, grid_size.y 4048: 30.389 milliseconds 
+ * 
+ * We can see that the time on gpu is pretty much constant, but the speedup between CPU and GPU on nsc was quite large = 10
  */
 
 #define GPU
 
 constexpr int bins = 256;
-constexpr int block_size_value = 1024;
+constexpr int block_size_value = 256;
 constexpr int histogram_channels = 3;
 unsigned int* hist;
 

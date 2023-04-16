@@ -11,6 +11,17 @@
 #include "stb_image.h"
 #include "stb_image_write.h"
 
+// README
+/*
+
+On NSC:
+    Time: 32.036 milliseconds
+    Time: 3.588 milliseconds  
+with 8096:4048 image:
+    Time: 1870.367 milliseconds 
+    Time: 77.086 milliseconds 
+*/
+
 #define GPU
 
 void GetHistogramCpu(const unsigned char* image_in, unsigned int* hist, const int width, const int height,
@@ -158,7 +169,7 @@ int main(const int argc, char** argv)
 		unsigned int* d_histogram;
 		checkCudaErrors(cudaMalloc(&d_histogram, HIST_CHANNELS * BINS * sizeof(unsigned int)));
 
-		GetHistogramGpu << <grid_size, block_size >> > (d_image, d_histogram, width, height, cpp);
+		GetHistogramGpu<<<grid_size, block_size>>>(d_image, d_histogram, width, height, cpp);
 		checkCudaErrors(
 			cudaMemcpy(hist, d_histogram, HIST_CHANNELS * BINS * sizeof(unsigned int), cudaMemcpyDeviceToHost));
 #else
@@ -181,9 +192,9 @@ int main(const int argc, char** argv)
 		}
 
 #ifdef GPU
-		BlellochScanHistGpu(hist_cum, hist_mins, true);
+		BlellochScanHistGpu(hist_cum, hist_mins, false);
 #else
-		BlellochScanHistCpu(hist_cum, hist_mins, true);
+		BlellochScanHistCpu(hist_cum, hist_mins, false);
 #endif
 
 
@@ -279,7 +290,7 @@ void BlellochScanHistGpu(unsigned int* hist_cum, unsigned int* hist_mins, bool p
 	dim3 block_size(BINS, 1, 1);
 	dim3 grid_size(1, 1, 1);
 
-	BlellochScanHistKernel < << grid_size, block_size >> > (d_hist_cum, d_hist_mins);
+	BlellochScanHistKernel<<<grid_size, block_size>>>(d_hist_cum, d_hist_mins);
 
 	// Copy results back from device to host
 	checkCudaErrors(

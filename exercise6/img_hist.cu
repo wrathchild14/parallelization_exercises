@@ -14,31 +14,47 @@
 // README
 /*
 
+On my PC (RTX 3060):
+with 1024:512 res image:
+	Time: 58.624 milliseconds
+	Time: 3.993 milliseconds
+	Speedup: 14.6816929626847
+with 8096:4048 res image:
+	Time: 3387.272 milliseconds
+	Time: 84.465 milliseconds
+	Speedup: 40.102669744864734
+
 On NSC:
-    Time: 32.036 milliseconds
-    Time: 3.588 milliseconds  
-with 8096:4048 image:
-    Time: 1870.367 milliseconds 
-    Time: 77.086 milliseconds 
+with 1024:512 res image:
+	CPU Time: 32.036 milliseconds
+	GPU Time: 3.588 milliseconds
+	Speedup: 8.928651059085842
+with 8096:4048 res image:
+	CPU Time: 1870.367 milliseconds
+	GPU Time: 77.086 milliseconds
+	Speedup: 24.26338115870586
+
+So first it looks suprising because of the speedups but the GPU times are similar.
+The interesting thing is that on my processor it takes more time to execute and that is the reason why the speedup is so large.
 */
 
 #define GPU
 
 void GetHistogramCpu(const unsigned char* image_in, unsigned int* hist, const int width, const int height,
-	const int channels_pp);
+                     const int channels_pp);
 void PrintHistogram(const unsigned int* hist);
 void BasicCumHistCpu(unsigned int* hist_cum_normal);
 void BlellochScanHistCpu(unsigned int* hist_cum, unsigned int* hist_min, bool print);
 void BlellochScanHistGpu(unsigned int* hist_cum, unsigned int* hist_mins, bool print);
 void EqulizeImageCpu(int height, int width, unsigned char* image_in, unsigned char* image_out, unsigned int* hist_cum,
-	unsigned int* hist_mins);
+                     unsigned int* hist_mins);
 
 constexpr int HIST_CHANNELS = 3;
 constexpr int BINS = 256;
 constexpr int BLOCK_SIZE_VALUE = 256;
 
 __global__ void GetHistogramGpu(const unsigned char* image, unsigned int* histogram, const int width, const int height,
-	const int channels_pp)
+                                const int channels_pp)
 {
 	const int x = threadIdx.x + blockIdx.x * blockDim.x;
 	const int y = threadIdx.y + blockIdx.y * blockDim.y;
@@ -57,7 +73,7 @@ __global__ void GetHistogramGpu(const unsigned char* image, unsigned int* histog
 }
 
 __global__ void EqualizeImageGpu(int height, int width, unsigned char* image_in, unsigned char* image_out,
-	unsigned int* hist_cum, unsigned int* hist_mins)
+                                 unsigned int* hist_cum, unsigned int* hist_mins)
 {
 	const int tid_x = blockIdx.x * blockDim.x + threadIdx.x;
 	const int tid_y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -112,7 +128,8 @@ __global__ void BlellochScanHistKernel(unsigned int* hist_cum, unsigned int* his
 		__syncthreads();
 	}
 
-	if (threadIdx.x == 0) {
+	if (threadIdx.x == 0)
+	{
 		hist_cum[BINS - 1] = 0;
 		hist_cum[BINS * 2 - 1] = 0;
 		hist_cum[BINS * 3 - 1] = 0;
@@ -143,7 +160,7 @@ __global__ void BlellochScanHistKernel(unsigned int* hist_cum, unsigned int* his
 
 int main(const int argc, char** argv)
 {
-	char* image_file = "lena_small.png";
+	char* image_file = "lena.png";
 	unsigned int* hist = static_cast<unsigned int*>(calloc(HIST_CHANNELS * BINS, sizeof(unsigned int)));
 	int width, height, cpp;
 	unsigned char* image_in = stbi_load(image_file, &width, &height, &cpp, 0);
@@ -169,7 +186,7 @@ int main(const int argc, char** argv)
 		unsigned int* d_histogram;
 		checkCudaErrors(cudaMalloc(&d_histogram, HIST_CHANNELS * BINS * sizeof(unsigned int)));
 
-		GetHistogramGpu<<<grid_size, block_size>>>(d_image, d_histogram, width, height, cpp);
+		GetHistogramGpu << <grid_size, block_size >> >(d_image, d_histogram, width, height, cpp);
 		checkCudaErrors(
 			cudaMemcpy(hist, d_histogram, HIST_CHANNELS * BINS * sizeof(unsigned int), cudaMemcpyDeviceToHost));
 #else
@@ -213,7 +230,7 @@ int main(const int argc, char** argv)
 		checkCudaErrors(
 			cudaMemcpy(d_hist_mins, hist_mins, HIST_CHANNELS * sizeof(unsigned int), cudaMemcpyHostToDevice));
 
-		EqualizeImageGpu << < grid_size, block_size >> > (height, width, d_image, d_image_out, d_hist_cum, d_hist_mins);
+		EqualizeImageGpu << < grid_size, block_size >> >(height, width, d_image, d_image_out, d_hist_cum, d_hist_mins);
 		checkCudaErrors(
 			cudaMemcpy(image_out, d_image_out, height * width * 4 * sizeof(unsigned char), cudaMemcpyDeviceToHost));
 
@@ -246,7 +263,7 @@ int main(const int argc, char** argv)
 }
 
 void EqulizeImageCpu(int height, int width, unsigned char* image_in, unsigned char* image_out, unsigned int* hist_cum,
-	unsigned int* hist_mins)
+                     unsigned int* hist_mins)
 {
 	for (int i = 0; i < height; i++)
 	{
@@ -290,7 +307,7 @@ void BlellochScanHistGpu(unsigned int* hist_cum, unsigned int* hist_mins, bool p
 	dim3 block_size(BINS, 1, 1);
 	dim3 grid_size(1, 1, 1);
 
-	BlellochScanHistKernel<<<grid_size, block_size>>>(d_hist_cum, d_hist_mins);
+	BlellochScanHistKernel << <grid_size, block_size >> >(d_hist_cum, d_hist_mins);
 
 	// Copy results back from device to host
 	checkCudaErrors(
@@ -388,8 +405,8 @@ void BasicCumHistCpu(unsigned int* hist_cum_normal)
 }
 
 void GetHistogramCpu(const unsigned char* image_in,
-	unsigned int* hist,
-	const int width, const int height, const int channels_pp)
+                     unsigned int* hist,
+                     const int width, const int height, const int channels_pp)
 {
 	// Each color channel is 1 byte long, there are 4 channels RED, BLUE, GREEN,  and ALPHA
 	// The order is RED|GREEN|BLUE|ALPHA for each pixel, we ignore the ALPHA channel when computing the histograms

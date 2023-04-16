@@ -71,8 +71,63 @@ __global__ void EqualizeImageGpu(int height, int width, unsigned char* image_in,
 	}
 }
 
-__global__ void BlellochScanHistKernel(unsigned int* hist_cum, unsigned int* hist_mins)
+__global__ void BlellochScanHistKernel(unsigned int* hist_cum, unsigned int* hist_min)
 {
+	for (int i = 1; i < BINS; i *= 2)
+	{
+		for (int j = 0; j < BINS; j += i * 2)
+		{
+			int red_value = hist_cum[j + i - 1];
+			hist_cum[j + i * 2 - 1] += red_value;
+			if (red_value > 0 && hist_min[0] == 99999)
+			{
+				hist_min[0] = red_value;
+			}
+
+			int green_value = hist_cum[j + i - 1 + BINS];
+			hist_cum[j + i * 2 - 1 + BINS] += green_value;
+			if (green_value > 0 && hist_min[1] == 99999)
+			{
+				hist_min[1] = green_value;
+			}
+
+			int blue_value = hist_cum[j + i - 1 + BINS * 2];
+			hist_cum[j + i * 2 - 1 + BINS * 2] += blue_value;
+			if (blue_value > 0 && hist_min[2] == 99999)
+			{
+				hist_min[2] = blue_value;
+			}
+		}
+		__syncthreads();
+	}
+
+	if (threadIdx.x == 0) {
+		hist_cum[BINS - 1] = 0;
+		hist_cum[BINS * 2 - 1] = 0;
+		hist_cum[BINS * 3 - 1] = 0;
+	}
+
+	__syncthreads();
+
+	for (int i = BINS / 2; i >= 1; i /= 2)
+	{
+		for (int j = 0; j < BINS; j += i * 2)
+		{
+			unsigned int temp;
+			temp = hist_cum[j + i - 1];
+			hist_cum[j + i - 1] = hist_cum[j + i * 2 - 1];
+			hist_cum[j + i * 2 - 1] += temp;
+
+			temp = hist_cum[j + i - 1 + BINS];
+			hist_cum[j + i - 1 + BINS] = hist_cum[j + i * 2 - 1 + BINS];
+			hist_cum[j + i * 2 - 1 + BINS] += temp;
+
+			temp = hist_cum[j + i - 1 + BINS * 2];
+			hist_cum[j + i - 1 + BINS * 2] = hist_cum[j + i * 2 - 1 + BINS * 2];
+			hist_cum[j + i * 2 - 1 + BINS * 2] += temp;
+		}
+		__syncthreads();
+	}
 }
 
 int main(const int argc, char** argv)
@@ -221,10 +276,10 @@ void BlellochScanHistGpu(unsigned int* hist_cum, unsigned int* hist_mins, bool p
 	checkCudaErrors(cudaMemcpy(d_hist_mins, hist_mins, HIST_CHANNELS * sizeof(unsigned int), cudaMemcpyHostToDevice));
 
 	// Launch kernel for Blelloch inclusive s
-	dim3 block_size(BINS);
-	dim3 grid_size((block_size.x - 1) / block_size.x);
+	dim3 block_size(BINS, 1, 1);
+	dim3 grid_size(1, 1, 1);
 
-	BlellochScanHistKernel << <grid_size, block_size >> > (d_hist_cum, d_hist_mins);
+	BlellochScanHistKernel < << grid_size, block_size >> > (d_hist_cum, d_hist_mins);
 
 	// Copy results back from device to host
 	checkCudaErrors(

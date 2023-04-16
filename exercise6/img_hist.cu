@@ -193,12 +193,10 @@ int main(const int argc, char** argv)
 		GetHistogramCpu(image_in, hist, width, height, cpp);
 #endif
 
-		// Cumulative histogram
 		/*auto hist_cum_normal = static_cast<unsigned int*>(malloc(HIST_CHANNELS * BINS * sizeof(unsigned int)));
 		memcpy(hist_cum_normal, hist, HIST_CHANNELS * BINS * sizeof(unsigned int));
 		BasicCumHistCpu(hist_cum_normal);*/
 
-		// Init values for Blelloch inclusive scan
 		auto hist_cum = static_cast<unsigned int*>(malloc(HIST_CHANNELS * BINS * sizeof(unsigned int)));
 		memcpy(hist_cum, hist, HIST_CHANNELS * BINS * sizeof(unsigned int));
 
@@ -217,7 +215,6 @@ int main(const int argc, char** argv)
 
 		auto image_out = static_cast<unsigned char*>(malloc(width * height * 4 * sizeof(unsigned char)));
 
-		// Equalization
 #ifdef GPU
 		unsigned char* d_image_out;
 		checkCudaErrors(cudaMalloc((void**)&d_image_out, height * width * 4 * sizeof(unsigned char)));
@@ -242,7 +239,6 @@ int main(const int argc, char** argv)
 #endif
 		cudaEventRecord(stop);
 
-		// Wait for the event to finish
 		cudaEventSynchronize(stop);
 
 		float milliseconds = 0;
@@ -290,26 +286,19 @@ void EqulizeImageCpu(int height, int width, unsigned char* image_in, unsigned ch
 
 void BlellochScanHistGpu(unsigned int* hist_cum, unsigned int* hist_mins, bool print)
 {
-	// Allocate memory on device
 	unsigned int* d_hist_cum;
 	unsigned int* d_hist_mins;
 	checkCudaErrors(cudaMalloc((void**)&d_hist_cum, HIST_CHANNELS * BINS * sizeof(unsigned int)));
 	checkCudaErrors(cudaMalloc((void**)&d_hist_mins, HIST_CHANNELS * sizeof(unsigned int)));
-
-	// Copy hist from host to device
 	checkCudaErrors(
 		cudaMemcpy(d_hist_cum, hist_cum, HIST_CHANNELS * BINS * sizeof(unsigned int), cudaMemcpyHostToDevice));
-
-	// Copy hist minimum values from host to device
 	checkCudaErrors(cudaMemcpy(d_hist_mins, hist_mins, HIST_CHANNELS * sizeof(unsigned int), cudaMemcpyHostToDevice));
 
-	// Launch kernel for Blelloch inclusive s
 	dim3 block_size(BINS, 1, 1);
 	dim3 grid_size(1, 1, 1);
 
 	BlellochScanHistKernel << <grid_size, block_size >> >(d_hist_cum, d_hist_mins);
 
-	// Copy results back from device to host
 	checkCudaErrors(
 		cudaMemcpy(hist_cum, d_hist_cum, HIST_CHANNELS * BINS * sizeof(unsigned int), cudaMemcpyDeviceToHost));
 	checkCudaErrors(cudaMemcpy(hist_mins, d_hist_mins, HIST_CHANNELS * sizeof(unsigned int), cudaMemcpyDeviceToHost));
@@ -320,7 +309,6 @@ void BlellochScanHistGpu(unsigned int* hist_cum, unsigned int* hist_mins, bool p
 		printf("Log: min values: r%d g%d b%d\n", hist_mins[0], hist_mins[1], hist_mins[2]);
 	}
 
-	// Free memory on device
 	cudaFree(d_hist_cum);
 	cudaFree(d_hist_mins);
 }

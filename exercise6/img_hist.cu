@@ -1,67 +1,43 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <cuda.h>
 #include <cuda_runtime.h>
-#include <device_launch_parameters.h>
+#include <cstdio>
+#include <cstdlib>
 
 #include "helper_cuda.h"
 
 #define STB_IMAGE_IMPLEMENTATION
 #define STB_IMAGE_WRITE_IMPLEMENTATION
+#include <device_launch_parameters.h>
+
 #include "stb_image.h"
 #include "stb_image_write.h"
 
-/*
- * README
- * Image is 4 channels, histogram is 3 channels
- * Main development was done on locally on my PC with GPU: NVIDIA GeForce RTX 3060 and these are the following results:
- * Time on CPU: 144.377 milliseconds
- *
- * Time on GPU with 32 block size and grid_size.x 253, grid_size.y 4048: 36.529 milliseconds
- * Time on GPU with 64 block size and grid_size.x 127, grid_size.y 4048: 31.218 milliseconds
- * Time on GPU with 128 block size and grid_size.x 64, grid_size.y 4048: 31.345 milliseconds
- * Time on GPU with 256 block size and grid_size.x 32, grid_size.y 4048: 31.540 milliseconds
- * Time on GPU with 512 block size and grid_size.x 16, grid_size.y 4048: 34.421 milliseconds
- * Time on GPU with 1024 block size and grid_size.x 8, grid_size.y 4048: 35.507 milliseconds
- * Best of these times were the ones with [64, 128, 256] block sizes with a speedup around 4.6
- *
- *
- * on nsc:
- * Time on CPU: 294.404 milliseconds
- * Time on GPU with 32 block size and grid_size.x 253, grid_size.y 4048: 29.899 milliseconds
- * Time on GPU with 64 block size and grid_size.x 127, grid_size.y 4048: 29.770 milliseconds
- * Time on GPU with 128 block size and grid_size.x 64, grid_size.y 4048: 30.404 milliseconds
- * Time on GPU with 256 block size and grid_size.x 32, grid_size.y 4048: 29.795 milliseconds
- * Time on GPU with 512 block size and grid_size.x 16, grid_size.y 4048: 29.816 milliseconds
- * Time on GPU with 1024 block size and grid_size.x 8, grid_size.y 4048: 30.389 milliseconds
- *
- * We can see that the time on gpu is pretty much constant, but the speedup between CPU and GPU on nsc was quite large = 10
- */
-
 #define GPU
 
-constexpr int bins = 256;
-constexpr int block_size_value = 256;
-constexpr int histogram_channels = 3;
-unsigned int *hist;
+void BasicCumHistCpu(unsigned int* hist_cum_normal);
 
-void histogram_cpu(const unsigned char *image_in,
-                   unsigned int *hist,
-                   const int width, const int height, const int channels_pp)
+void BlellochScanHistCpu(unsigned int* hist_cum, unsigned int* hist_min, bool print);
+
+constexpr int HIST_CHANNELS = 3;
+constexpr int BINS = 256;
+constexpr int BLOCK_SIZE_VALUE = 256;
+
+void GetHistogramCpu(const unsigned char* image_in,
+    unsigned int* hist,
+    const int width, const int height, const int channels_pp)
 {
     // Each color channel is 1 byte long, there are 4 channels RED, BLUE, GREEN,  and ALPHA
     // The order is RED|GREEN|BLUE|ALPHA for each pixel, we ignore the ALPHA channel when computing the histograms
     for (int i = 0; i < height; i++)
         for (int j = 0; j < width; j++)
         {
-            hist[image_in[(i * width + j) * channels_pp]]++;                // RED
-            hist[image_in[(i * width + j) * channels_pp + 1] + bins]++;     // GREEN
-            hist[image_in[(i * width + j) * channels_pp + 2] + 2 * bins]++; // BLUE
+            hist[image_in[(i * width + j) * channels_pp]]++; // RED
+            hist[image_in[(i * width + j) * channels_pp + 1] + BINS]++; // GREEN
+            hist[image_in[(i * width + j) * channels_pp + 2] + 2 * BINS]++; // BLUE
         }
 }
 
-__global__ void histogram_gpu(const unsigned char *image, unsigned int *histogram, const int width, const int height,
-                              const int channels_pp)
+__global__ void GetHistogramGpu(const unsigned char* image, unsigned int* histogram, const int width, const int height,
+    const int channels_pp)
 {
     const int x = threadIdx.x + blockIdx.x * blockDim.x;
     const int y = threadIdx.y + blockIdx.y * blockDim.y;
@@ -74,49 +50,35 @@ __global__ void histogram_gpu(const unsigned char *image, unsigned int *histogra
         const int b = image[index + 2];
 
         atomicAdd(&histogram[r], 1);
-        atomicAdd(&histogram[g] + bins, 1);
-        atomicAdd(&histogram[b] + bins * 2, 1);
+        atomicAdd(&histogram[g] + BINS, 1);
+        atomicAdd(&histogram[b] + BINS * 2, 1);
     }
 }
 
-void print_histogram(const unsigned int *hist)
+void PrintHistogram(const unsigned int* hist)
 {
     printf("Colour\tNo. Pixels\n");
-    for (int i = 0; i < bins; i++)
+    for (int i = 0; i < BINS; i++)
     {
         if (hist[i] > 0)
             printf("%dR\t%d\n", i, hist[i]);
-        if (hist[i + bins] > 0)
-            printf("%dG\t%d\n", i, hist[i + bins]);
-        if (hist[i + 2 * bins] > 0)
-            printf("%dB\t%d\n", i, hist[i + 2 * bins]);
+        if (hist[i + BINS] > 0)
+            printf("%dG\t%d\n", i, hist[i + BINS]);
+        if (hist[i + 2 * BINS] > 0)
+            printf("%dB\t%d\n", i, hist[i + 2 * BINS]);
     }
 }
 
-int main(const int argc, char **argv)
+int main(const int argc, char** argv)
 {
-    char *image_file;
-
-    if (argc > 1)
-    {
-        image_file = argv[1];
-    }
-    else
-    {
-        fprintf(stderr, "Not enough arguments\n");
-        fprintf(stderr, "Usage: %s <IMAGE_PATH>\n", argv[0]);
-        exit(1);
-    }
-
-    hist = static_cast<unsigned int *>(calloc(histogram_channels * bins, sizeof(unsigned int)));
-
+    char* image_file = "lena_small.png";
+    unsigned int* hist = static_cast<unsigned int*>(calloc(HIST_CHANNELS * BINS, sizeof(unsigned int)));
     int width, height, cpp;
-    unsigned char *image_in = stbi_load(image_file, &width, &height, &cpp, 0);
+    unsigned char* image_in = stbi_load(image_file, &width, &height, &cpp, 0);
     printf("Log: image loaded with %d width, %d height, %d channels\n", width, height, cpp);
 
     if (image_in)
     {
-        // Compute and print the histogram
         cudaEvent_t start, stop;
         cudaEventCreate(&start);
         cudaEventCreate(&stop);
@@ -124,21 +86,21 @@ int main(const int argc, char **argv)
 
 #ifdef GPU
 
-        dim3 block_size(block_size_value);
+        dim3 block_size(BLOCK_SIZE_VALUE);
         dim3 grid_size((width + block_size.x - 1) / block_size.x, (height + block_size.y - 1) / block_size.y);
         printf("Log: block size %d %d, grid size %d %d\n", block_size.x, block_size.y, grid_size.x, grid_size.y);
 
-        unsigned char *d_image;
+        unsigned char* d_image;
         checkCudaErrors(cudaMalloc(&d_image, width * height * cpp * sizeof(unsigned char)));
         checkCudaErrors(
             cudaMemcpy(d_image, image_in, width * height * cpp * sizeof(unsigned char), cudaMemcpyHostToDevice));
 
-        unsigned int *d_histogram;
-        checkCudaErrors(cudaMalloc(&d_histogram, histogram_channels * bins * sizeof(unsigned int)));
+        unsigned int* d_histogram;
+        checkCudaErrors(cudaMalloc(&d_histogram, HIST_CHANNELS * BINS * sizeof(unsigned int)));
 
-        histogram_gpu<<<grid_size, block_size>>>(d_image, d_histogram, width, height, cpp);
+        GetHistogramGpu << <grid_size, block_size >> > (d_image, d_histogram, width, height, cpp);
         checkCudaErrors(
-            cudaMemcpy(hist, d_histogram, histogram_channels * bins * sizeof(unsigned int), cudaMemcpyDeviceToHost));
+            cudaMemcpy(hist, d_histogram, HIST_CHANNELS * BINS * sizeof(unsigned int), cudaMemcpyDeviceToHost));
 
 #else
 
@@ -154,62 +116,49 @@ int main(const int argc, char **argv)
         float milliseconds = 0;
         cudaEventElapsedTime(&milliseconds, start, stop);
 
-        // Compute the Blelloch Inclusive Scan of the histogram
-        unsigned int *hist_scan = static_cast<unsigned int *>(malloc(histogram_channels * bins * sizeof(unsigned int)));
-        memcpy(hist_scan, hist, histogram_channels * bins * sizeof(unsigned int));
 
-        // Up-sweep phase
-        for (int stride = 1; stride < histogram_channels * bins; stride <<= 1)
-        {
-            for (int i = stride; i < histogram_channels * bins; i += stride << 1)
-            {
-                hist_scan[i + stride - 1] += hist_scan[i - 1];
-            }
+        // Histogram equalization
+        auto hist_cum_normal = static_cast<unsigned int*>(malloc(HIST_CHANNELS * BINS * sizeof(unsigned int)));
+        memcpy(hist_cum_normal, hist, HIST_CHANNELS * BINS * sizeof(unsigned int));
+        BasicCumHistCpu(hist_cum_normal);
+
+
+        // Init values for Blelloch inclusive scan
+        auto hist_cum = static_cast<unsigned int*>(malloc(HIST_CHANNELS * BINS * sizeof(unsigned int)));
+        memcpy(hist_cum, hist, HIST_CHANNELS * BINS * sizeof(unsigned int));
+
+        auto hist_mins = static_cast<unsigned int*>(malloc(HIST_CHANNELS * sizeof(unsigned int)));
+        for (unsigned int i = 0; i < HIST_CHANNELS; i++) {
+            hist_mins[i] = 99999;
         }
 
-        // Down-sweep phase
-        hist_scan[histogram_channels * bins - 1] = 0;
-        for (int stride = histogram_channels * bins >> 1; stride >= 1; stride >>= 1)
-        {
-            for (int i = stride; i < histogram_channels * bins; i += stride << 1)
-            {
-                unsigned int t = hist_scan[i - 1];
-                hist_scan[i - 1] = hist_scan[i + stride - 1];
-                hist_scan[i + stride - 1] += t;
-            }
-        }
-        
-        // Compute color-level transformation
-        unsigned char lut[histogram_channels * bins];
-        const float scale = (bins - 1) / static_cast<float>(width * height);
-        for (int i = 0; i < histogram_channels * bins; i++)
-        {
-            lut[i] = static_cast<unsigned char>(hist_scan[i] * scale);
-        }
+        BlellochScanHistCpu(hist_cum, hist_mins, false);
 
-        // Apply color-level transformation to the image
-        unsigned char *image_out = static_cast<unsigned char *>(malloc(width * height * cpp * sizeof(unsigned char)));
+        // Out-image should be 4 cpps
+        auto image_out = static_cast<unsigned char*>(malloc(width * height * 4 * sizeof(unsigned char)));
         for (int i = 0; i < height; i++)
         {
             for (int j = 0; j < width; j++)
             {
-                const int index = (i * width + j) * cpp;
-                image_out[index] = lut[image_in[index]];         // R
-                image_out[index + 1] = lut[image_in[index + 1]]; // G
-                image_out[index + 2] = lut[image_in[index + 2]]; // B
-                if (cpp == 4)
-                {
-                    image_out[index + 3] = image_in[index + 3]; // A
-                }
+                const int index = (i * width + j) * 4;
+                int r = image_in[index];
+                int g = image_in[index + 1];
+                int b = image_in[index + 2];
+
+                image_out[index] = round(((static_cast<double>(hist_cum[r] - hist_mins[0])) / static_cast<double>((height * width - hist_mins[0]))) * (BINS - 1));
+                image_out[index + 1] = round(((static_cast<double>(hist_cum[g + BINS] - hist_mins[1])) / static_cast<double>((height * width - hist_mins[1]))) * (BINS - 1));
+                image_out[index + 2] = round(((static_cast<double>(hist_cum[b + BINS * 2] - hist_mins[2])) / static_cast<double>((height * width - hist_mins[2]))) * (BINS - 1));
+                image_out[index + 3] = image_in[index + 3]; // Keep the A value
             }
         }
-        stbi_write_png("lena_result.png", width, height, histogram_channels, image_out, width * histogram_channels);
+        stbi_write_png("lena_result.png", width, height, 4, image_out, width * 4);
 
-        // print_histogram(hist);
+        free(hist_cum);
+        free(image_out);
 
 #ifdef GPU
         printf("Time on GPU with %d block size and grid_size.x %d, grid_size.y %d: %0.3f milliseconds \n",
-               block_size.x, grid_size.x, grid_size.y, milliseconds);
+            block_size.x, grid_size.x, grid_size.y, milliseconds);
 
         cudaFree(d_image);
         cudaFree(d_histogram);
@@ -223,4 +172,79 @@ int main(const int argc, char **argv)
     }
 
     return 0;
+}
+
+void BlellochScanHistCpu(unsigned int* hist_cum, unsigned int* hist_min, bool print)
+{
+    for (int i = 1; i < BINS; i *= 2)
+    {
+        for (int j = 0; j < BINS; j += i * 2)
+        {
+            int red_value = hist_cum[j + i - 1];
+            hist_cum[j + i * 2 - 1] += red_value;
+            if (red_value > 0 && hist_min[0] == 99999) {
+                hist_min[0] = red_value;
+            }
+
+            int green_value = hist_cum[j + i - 1 + BINS];
+            hist_cum[j + i * 2 - 1 + BINS] += green_value;
+            if (green_value > 0 && hist_min[1] == 99999) {
+                hist_min[1] = green_value;
+            }
+
+            int blue_value = hist_cum[j + i - 1 + BINS * 2];
+            hist_cum[j + i * 2 - 1 + BINS * 2] += blue_value;
+            if (blue_value > 0 && hist_min[2] == 99999) {
+                hist_min[2] = blue_value;
+            }
+        }
+    }
+
+    hist_cum[BINS - 1] = 0;
+    hist_cum[BINS * 2 - 1] = 0;
+    hist_cum[BINS * 3 - 1] = 0;
+
+    for (int i = BINS / 2; i >= 1; i /= 2)
+    {
+        for (int j = 0; j < BINS; j += i * 2)
+        {
+            unsigned int temp;
+            temp = hist_cum[j + i - 1];
+            hist_cum[j + i - 1] = hist_cum[j + i * 2 - 1];
+            hist_cum[j + i * 2 - 1] += temp;
+
+            temp = hist_cum[j + i - 1 + BINS];
+            hist_cum[j + i - 1 + BINS] = hist_cum[j + i * 2 - 1 + BINS];
+            hist_cum[j + i * 2 - 1 + BINS] += temp;
+
+            temp = hist_cum[j + i - 1 + BINS * 2];
+            hist_cum[j + i - 1 + BINS * 2] = hist_cum[j + i * 2 - 1 + BINS * 2];
+            hist_cum[j + i * 2 - 1 + BINS * 2] += temp;
+        }
+    }
+    printf("Log: min values: r%d g%d b%d\n", hist_min[0], hist_min[1], hist_min[2]);
+    if (print) {
+        PrintHistogram(hist_cum);
+    }
+}
+
+void BasicCumHistCpu(unsigned int* hist_cum_normal)
+{
+    int r_sum = 0;
+    int g_sum = 0;
+    int b_sum = 0;
+    for (int i = 0; i < BINS; i++)
+    {
+        int red = hist_cum_normal[i];
+        r_sum += red;
+        hist_cum_normal[i] = r_sum;
+
+        int green = hist_cum_normal[i + BINS];
+        g_sum += green;
+        hist_cum_normal[i + BINS] = g_sum;
+
+        int blue = hist_cum_normal[i + BINS * 2];
+        b_sum += blue;
+        hist_cum_normal[i + BINS * 2] = b_sum;
+    }
 }

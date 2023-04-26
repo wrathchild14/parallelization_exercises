@@ -106,21 +106,21 @@ __global__ void BlellochScanHistKernel(unsigned int* hist_cum, unsigned int* his
 		{
 			int red_value = hist_cum[j + i - 1];
 			hist_cum[j + i * 2 - 1] += red_value;
-			if (red_value > 0 && hist_min[0] == 99999)
+			if (red_value > 0 && hist_min[0] == INT_MAX)
 			{
 				hist_min[0] = red_value;
 			}
 
 			int green_value = hist_cum[j + i - 1 + BINS];
 			hist_cum[j + i * 2 - 1 + BINS] += green_value;
-			if (green_value > 0 && hist_min[1] == 99999)
+			if (green_value > 0 && hist_min[1] == INT_MAX)
 			{
 				hist_min[1] = green_value;
 			}
 
 			int blue_value = hist_cum[j + i - 1 + BINS * 2];
 			hist_cum[j + i * 2 - 1 + BINS * 2] += blue_value;
-			if (blue_value > 0 && hist_min[2] == 99999)
+			if (blue_value > 0 && hist_min[2] == INT_MAX)
 			{
 				hist_min[2] = blue_value;
 			}
@@ -160,7 +160,7 @@ __global__ void BlellochScanHistKernel(unsigned int* hist_cum, unsigned int* his
 
 int main(const int argc, char** argv)
 {
-	char* image_file = "lena.png";
+	char* image_file = "lena_small.png";
 	unsigned int* hist = static_cast<unsigned int*>(calloc(HIST_CHANNELS * BINS, sizeof(unsigned int)));
 	int width, height, cpp;
 	unsigned char* image_in = stbi_load(image_file, &width, &height, &cpp, 0);
@@ -203,7 +203,7 @@ int main(const int argc, char** argv)
 		auto hist_mins = static_cast<unsigned int*>(malloc(HIST_CHANNELS * sizeof(unsigned int)));
 		for (unsigned int i = 0; i < HIST_CHANNELS; i++)
 		{
-			hist_mins[i] = 99999;
+			hist_mins[i] = INT_MAX;
 		}
 
 #ifdef GPU

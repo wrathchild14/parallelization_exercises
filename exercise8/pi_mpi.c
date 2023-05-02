@@ -10,38 +10,27 @@
 /* Readme:
 Samples = 5000000
 
-Nodes: 1, Processes: 1:
-PI = 4.000000 | computed in 0.00 s
+PI = 3.142030 | computed in 0.57 s
+Nodes: 1, Processes: 2
+PI = 3.141841 | computed in 0.21 s
+Nodes: 1, Processes: 4
+PI = 3.143234 | computed in 0.10 s
+Nodes: 1, Processes: 8
+PI = 3.143058 | computed in 0.04 s
+Nodes: 1, Processes: 16
+PI = 3.142443 | computed in 0.04 s
+Nodes: 1, Processes: 32
 
-Nodes: 1, Processes: 2:
-PI = 3.571493 | computed in 0.25 s
-
-Nodes: 1, Processes: 4:
-PI = 3.357225 | computed in 0.14 s
-
-Nodes: 1, Processes: 8:
-PI = 3.250678 | computed in 0.13 s
-
-Nodes: 1, Processes: 16:
-PI = 3.196818 | computed in 0.04 s
-
-Nodes: 1, Processes: 32:
-PI = 3.169265 | computed in 0.02 s
-
-Nodes: 2, Processes: 2:
-PI = 3.571493 | computed in 0.27 s
-
-Nodes: 2, Processes: 4:
-PI = 3.357225 | computed in 0.20 s
-
-Nodes: 2, Processes: 8:
-PI = 3.250678 | computed in 0.08 s
-
-Nodes: 2, Processes: 16:
-PI = 3.196818 | computed in 0.05 s
-
+PI = 3.142030 | computed in 0.52 s
+Nodes: 2, Processes: 2
+PI = 3.141841 | computed in 0.19 s
+Nodes: 2, Processes: 4
+PI = 3.143234 | computed in 0.09 s
+Nodes: 2, Processes: 8
+PI = 3.143058 | computed in 0.05 s
+Nodes: 2, Processes: 16
+PI = 3.142443 | computed in 0.06 s
 Nodes: 2, Processes: 32
-PI = 3.169265 | computed in 0.09 s
 */
 
 int main(int argc, char *argv[])
@@ -60,7 +49,7 @@ int main(int argc, char *argv[])
     double start = MPI_Wtime();
     double count = 0;
     double x, y, z, pi;
-    double process_samples = SAMPLES / num_process;
+    double process_samples = SAMPLES / (num_process - 1);
 
     if (rank != 0)
     {
@@ -89,7 +78,6 @@ int main(int argc, char *argv[])
             int local_count = atoi(message_buffer);
             count += local_count;
         }
-        count += process_samples;
         pi = ((double)count / SAMPLES) * 4.0;
         double end = MPI_Wtime();
         printf("PI = %f | computed in %.2f s\n", pi, end - start);

@@ -64,7 +64,6 @@ int main(int argc, char *argv[])
 
     if (rank != 0)
     {
-        double sample_start = process_samples * rank;
         srand(rank + SEED);
         int local_count = 0;
         for (int i = 0; i < process_samples; i++)
